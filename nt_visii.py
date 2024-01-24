@@ -4,9 +4,11 @@ import yaml
 # 指定gpu
 os.environ["CUDA_VISIBLE_DEVICES"] = "0"  
 import torch
+import numpy as np
 from diffusers import EulerAncestralDiscreteScheduler
 from PIL import Image
 from visii import StableDiffusionVisii,preprocess
+from torch.utils.tensorboard import SummaryWriter
 
 def argparser():
     parser = argparse.ArgumentParser()
@@ -56,6 +58,7 @@ if __name__ == "__main__":
         if config['exp']['prompt_type'] == 'hard':
             prompt = config['exp']['init_prompt']
             print('Initialize with hard prompt: ', prompt)
+            device = "cuda" if torch.cuda.is_available() else "cpu"
         elif config['exp']['prompt_type'] == 'learn':
             config_path = "./configs/hard_prompts_made_easy.json"
             from pez import *
@@ -83,6 +86,7 @@ if __name__ == "__main__":
         
         print('Save learned prompt to: ', os.path.join(log_dir, "learned_prompt.txt"))
         print('Init prompt: ', prompt)
+        prompt_embeds = pipe._encode_prompt(prompt,device,1,True)
 
         print('Learning editing direction')
         before_noise_pred_text, before_noise_pred_image, before_noise_pred_uncond = pipe.get_specific_noise(prompt,before_image) #torch.Size([1, 4, 64, 64])
@@ -132,7 +136,7 @@ if __name__ == "__main__":
             with open(os.path.join(log_dir, 'learned_prompt.txt')) as f:
                 init_prompt = f.read()
             
-            target_image = pipe.test_concatenate(prompt_embeds=c_t,
+            target_image = pipe.test_concatenate(prompt_embeds=prompt_embeds,
                 image=before_image,
                 image_guidance_scale=1.5,
                 guidance_scale=args.guidance_scale,
@@ -140,10 +144,10 @@ if __name__ == "__main__":
                 prompt = args.prompt,
                 init_prompt = init_prompt,
                 num_images_per_prompt=1,
-                ).images
+                ).images[0]
         else:
             target_image = pipe.test(prompt_embeds=c_t,
-                image=before_image,
+                image=test_image,
                 image_guidance_scale=1.5,
                 guidance_scale=args.guidance_scale,
                 num_inference_steps=20,
@@ -154,7 +158,16 @@ if __name__ == "__main__":
         os.makedirs(location, exist_ok=True)
         save_path = os.path.join(location, 'target_image.png')
         target_image.save(save_path)
-        
+
+    writer = SummaryWriter(log_dir='tb_logs')
+    target_img_path = './results/nt_visii/target_image.png'
+    target_image_PIL = Image.open(target_img_path)
+    # print(type(target_image_PIL))
+    target_image_ararry = np.array(target_image_PIL)
+    print(target_image_ararry.shape)
+    # print(type(target_image_ararry))
+    writer.add_image('pics',target_image_ararry,3,dataformats='HWC')
+    writer.close()
         
         
         
